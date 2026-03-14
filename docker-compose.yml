@@ -1,0 +1,87 @@
+# ============================================================================
+# ROCm 7.2 MI50 (gfx906) — Ollama + vLLM
+# ============================================================================
+# docker compose up -d              → Start all services
+# docker compose up -d ollama       → Start only Ollama
+# docker compose up -d vllm         → Start only vLLM
+# docker compose logs -f ollama     → Follow Ollama logs
+# ============================================================================
+
+services:
+  # ── Ollama (patched for gfx906) ──────────────────────────────────────────
+  ollama:
+    build:
+      context: .
+      dockerfile: ollama/Dockerfile
+      args:
+        OLLAMA_VERSION: v0.17.7
+    container_name: ollama-mi50
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      # Mount host Ollama model storage so all existing models are available
+      - ollama-models:/usr/share/ollama/.ollama/models
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_LLM_LIBRARY=rocm
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_KEEP_ALIVE=60s
+      - OLLAMA_CONTEXT_LENGTH=8192
+      - GPU_MAX_HW_QUEUES=2
+      - GGML_CUDA_INIT=1
+      - HSA_OVERRIDE_GFX_VERSION=9.0.6
+    ipc: host
+    cap_add:
+      - SYS_PTRACE
+
+  # ── vLLM (OpenAI-compatible API) ────────────────────────────────────────
+  vllm:
+    build:
+      context: .
+      dockerfile: vllm/Dockerfile
+    container_name: vllm-mi50
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount local GGUF model directory
+      - ./models:/models:ro
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      - HIP_VISIBLE_DEVICES=0
+      - HSA_OVERRIDE_GFX_VERSION=9.0.6
+      - PYTORCH_ROCM_ARCH=gfx906
+      - VLLM_TARGET_DEVICE=rocm
+    ipc: host
+    cap_add:
+      - SYS_PTRACE
+    # Override the default CMD to specify your model — edit as needed:
+    # command: ["--host", "0.0.0.0", "--port", "8000", "--model", "/models/your-model.gguf"]
+    profiles:
+      - vllm  # Only starts with: docker compose --profile vllm up
+
+volumes:
+  ollama-models:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      # Point this to your existing Ollama model storage:
+      device: /usr/share/ollama/.ollama/models

@@ -1,0 +1,10 @@
+build/
+*.o
+*.so
+*.a
+__pycache__/
+*.pyc
+.env
+models/*.gguf
+models/*.bin
+!models/README.md
